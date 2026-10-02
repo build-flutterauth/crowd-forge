@@ -47,6 +47,31 @@ The same `seed + difficulty + start army` always produces the same level. The se
 
 **Rules are shared.** `src/sim/rules.ts` is used by both the offline simulator and live gameplay, so what the generator predicts is what happens. For example, gameplay obstacle kills are hard-capped at the loss fraction the generator assumed for worst-case play.
 
+## Arena — the main mode
+
+The big **▶ LEVEL** button on the menu. It plays like Mob Control / Top Lords:
+
+- A cannon at the bottom slides freely across the arena and fires soldiers continuously. Drag or use A/D to aim. A reticle, firing chevrons and a highlight on the bay you're aiming into show where shots go.
+- The lower arena is split into **bays** by short fences:
+  - open ×N gates
+  - stacks of gates
+  - **hedge-sealed jackpots** (e.g. ×99 ×99 ×99 behind a hedge you must chew through first)
+  - gates followed by a hedge
+  - trap bays with ÷ gates
+- A ×N gate turns every soldier group into N times as many soldiers.
+- Past the gates, the army spreads across a V-shaped hedge funnel. The enemy horde pours down that funnel from the fortress and meets it there.
+- Enemies that break through hunt your cannon and eat your fresh, unmultiplied shots. Hedges block and absorb them too.
+- Destroy the fortress before the horde reaches you or time runs out.
+
+Levels are procedural (`src/arena/`):
+1. Generate a bay layout.
+2. Simulate each aiming plan, including "break the hedge first, defend from an open bay when the horde leaks".
+3. Size the fortress so the best plan wins near the target time.
+4. Size the horde to the throughput of that plan, and tune it until casual players win at a difficulty-appropriate rate.
+5. Reject any layout where aim doesn't matter.
+
+In testing, real play reproduces the simulated best time within about ±2 s. The developer panel's **▶ Arena** button shows every simulated plan. Tuning lives in `src/config/arenaConfig.ts`, and `npx vite-node tools/validateArena.ts` sweeps levels. The original runner, Endless and Lane Battle remain as secondary modes on the menu.
+
 ## Lane Battle mode
 
 Open it from the **⚔ LANES** button on the main menu. It's a separate progression from the runner levels.

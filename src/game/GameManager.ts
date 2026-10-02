@@ -29,11 +29,15 @@ import { hashString } from '../core/SeedManager';
 import type { LaneLevelData } from '../lanes/LaneSim';
 import { LanesGenerator } from '../lanes/LanesGenerator';
 import { LanesMode, type LanesStats } from '../lanes/LanesMode';
+import { ARENA } from '../config/arenaConfig';
+import type { ArenaLevelData } from '../arena/ArenaSim';
+import { ArenaGenerator } from '../arena/ArenaGenerator';
+import { ArenaMode, type ArenaStats } from '../arena/ArenaMode';
 
 export type Phase = 'menu' | 'run' | 'dying' | 'runway' | 'over';
 
 export interface HudState {
-  mode: 'level' | 'endless' | 'lanes';
+  mode: 'level' | 'endless' | 'lanes' | 'arena';
   sub?: string;
   level: number;
   progress: number;
@@ -45,7 +49,7 @@ export interface HudState {
 }
 
 export interface RunResult {
-  mode: 'level' | 'endless' | 'lanes';
+  mode: 'level' | 'endless' | 'lanes' | 'arena';
   lanes?: { time: number; castlePct: number; towers: number; reason: string; bestNote: string; seed: number };
   won: boolean;
   level: number;
@@ -119,6 +123,8 @@ export class GameManager {
   readonly generator = new LevelGenerator();
   readonly lanesGen = new LanesGenerator();
   lanes: LanesMode | null = null;
+  readonly arenaGen = new ArenaGenerator();
+  arena: ArenaMode | null = null;
   readonly director = new DifficultyDirector();
   readonly variety = new VarietyHistory();
   readonly prog: ProgressionSystem;
@@ -241,6 +247,12 @@ export class GameManager {
   // ------------------------------------------------------------------
 
   private clearWorld(): void {
+    if (this.arena) {
+      this.arena.dispose();
+      this.arena = null;
+      this.env.setHalfWidth(GAME.track.halfWidth);
+      this.army.setVisible(true);
+    }
     if (this.lanes) {
       this.lanes.dispose();
       this.lanes = null;
@@ -436,6 +448,7 @@ export class GameManager {
   update(realDt: number): void {
     realDt = Math.min(realDt, 0.05);
     if (this.lanes) return this.updateLanes(realDt);
+    if (this.arena) return this.updateArena(realDt);
     const target = this.bosses.introActive ? 0.22 : this.slowT > 0 ? GAME.feel.slowmoScale : 1;
     if (this.slowT > 0) this.slowT -= realDt;
     this.timeScale += (target - this.timeScale) * Math.min(1, realDt * 10);
@@ -764,6 +777,97 @@ export class GameManager {
       mult: 1, coinsBase, coinsBonus, coinsTotal: coinsBase + coinsBonus, distance: 0, enemies: Math.round(st.kills), highestMult: 0,
       score: 0, newBest: false, progress: st.castlePct, rewards, lossPct: 0,
       lanes: { time: st.time, castlePct: st.castlePct, towers: st.towersBroken, reason: st.reason, bestNote: lv.report.best.name.replace('Smart, focus ', ''), seed: lv.seed },
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Arena (main mode)
+  // ------------------------------------------------------------------
+
+  arenaSeed(level: number): number {
+    return SeedManager.levelSeed(this.prog.data.masterSeed ^ hashString('arena'), level);
+  }
+
+  generateArena(level: number, seed?: number): ArenaLevelData {
+    const s = seed ?? this.debug.seed ?? this.arenaSeed(level);
+    const D = this.debug.difficulty ?? this.director.levelDifficulty(level);
+    const fireRate = ARENA.fireRate + ARENA.fireRatePerUpgrade * this.prog.data.upgrades.startUnits;
+    return this.arenaGen.generate({ seed: s, level, D, fireRate, env: this.chooseEnv(s) });
+  }
+
+  startArena(opts: { level?: number; seed?: number } = {}): void {
+    const level = opts.level ?? this.prog.data.arenaLevel;
+    const lv = this.generateArena(level, opts.seed);
+    this.clearWorld();
+    this.level = null;
+    this.endless = null;
+    this.env.apply(lv.env, lv.seed);
+    this.env.setHalfWidth(ARENA.halfWidth);
+    this.applyCosmetics();
+    this.army.reset(1);
+    this.army.setVisible(false);
+    this.input.reset();
+    const d = this.prog.data;
+    const color = COLORS.find((c) => c.id === d.equipped.color)?.hex ?? '#2f8cff';
+    this.arena = new ArenaMode(this.stage, this.particles, this.overlay, lv, { skin: d.equipped.skin, color, weapon: d.equipped.weapon });
+    this.arena.onBanner = (t, c, dur) => this.ui?.banner(t, c, dur);
+    this.arena.onEnd = (st) => this.endArena(st);
+    this.phase = 'run';
+    this.paused = false;
+    this.time = 0;
+    this.ui?.banner(`LEVEL ${level}`, 'level', 1.4);
+  }
+
+  private updateArena(realDt: number): void {
+    const ar = this.arena!;
+    if (ar.slowmo > 0) ar.slowmo -= realDt;
+    const target = ar.slowmo > 0 ? 0.35 : 1;
+    this.timeScale += (target - this.timeScale) * Math.min(1, realDt * 10);
+    const dt = this.paused ? 0 : realDt * this.timeScale;
+    this.time += dt;
+    this.input.update(this.paused ? 0 : realDt);
+    ar.update(dt, this.paused ? 0 : realDt, this.input.target, this.time);
+    this.env.update(dt, 20, this.stage.camera.position);
+    this.particles.update(dt);
+    this.overlay.update(realDt);
+    if (this.ui) {
+      const lv = ar.lv;
+      const left = Math.max(0, lv.maxTime - ar.t);
+      this.ui.hud({
+        mode: 'arena', level: lv.level, progress: 1 - Math.max(0, ar.castle) / lv.castleHP, distance: 0, army: 0, boost: false, tier: 0,
+        sub: `🏰 ${fmt(Math.max(0, Math.ceil(ar.castle)))} · ❤ ${fmt(Math.max(0, Math.ceil(ar.base)))} · ⏱ ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`,
+        debugLine: this.debug.showGen ? `bays ${lv.bays.map((b) => b.kind).join(' | ')} · ${lv.report.notes[0]}` : '',
+      });
+    }
+    this.stage.render();
+  }
+
+  private endArena(st: ArenaStats): void {
+    const lv = this.arena!.lv;
+    const d = this.prog.data;
+    this.phase = 'over';
+    const coinMult = this.prog.coinMult();
+    const speedBonus = st.won ? Math.max(0, Math.min(0.8, (lv.targetTime * 1.3 - st.time) / lv.targetTime)) : 0;
+    const base = (20 + 3 * lv.level) * coinMult;
+    const coinsBase = Math.round(base * (st.won ? 1 : 0.25 * st.castlePct + 0.1));
+    const coinsBonus = Math.round(base * speedBonus);
+    this.prog.addCoins(coinsBase + coinsBonus);
+    if (st.won && lv.level === d.arenaLevel && lv.seed === this.arenaSeed(lv.level)) d.arenaLevel++;
+    this.director.recordRun({
+      mode: 'arena', level: lv.level, won: st.won, progress: st.castlePct, startArmy: 1, finalArmy: st.won ? 1 : 0,
+      maxArmy: st.peak, unitsLost: 0, unitsGained: 0, enemiesDefeated: st.kills, gatesChosen: 0, choiceQuality: st.won ? 0.8 : 0.4, avgReaction: 0,
+    });
+    d.director = this.director.state;
+    d.stats.playTime += this.time;
+    const rewards = this.prog.applyRun({
+      mode: 'arena', won: st.won, maxArmy: st.peak, enemiesDefeated: Math.round(st.kills), multGates: 0, gatesTaken: 0,
+      bossesDefeated: 0, rareEvents: 0, lossPct: 0, endlessDistance: 0, bonusMult: 0,
+    });
+    this.ui?.runEnded({
+      mode: 'arena', won: st.won, level: lv.level, code: lv.code, difficulty: lv.D, finishArmy: 0, maxArmy: Math.round(st.peak),
+      mult: 1, coinsBase, coinsBonus, coinsTotal: coinsBase + coinsBonus, distance: 0, enemies: Math.round(st.kills), highestMult: 0,
+      score: 0, newBest: false, progress: st.castlePct, rewards, lossPct: 0,
+      lanes: { time: st.time, castlePct: st.castlePct, towers: st.hedges, reason: st.reason, bestNote: lv.report.best.name.replace('Smart, target ', ''), seed: lv.seed },
     });
   }
 

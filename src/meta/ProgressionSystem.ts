@@ -7,7 +7,7 @@ import type { EnvId } from '../core/types';
 import { SaveSystem, type MissionState, type SaveData } from './SaveSystem';
 
 export interface RunStats {
-  mode: 'level' | 'endless' | 'lanes';
+  mode: 'level' | 'endless' | 'lanes' | 'arena';
   won: boolean;
   maxArmy: number;
   enemiesDefeated: number;

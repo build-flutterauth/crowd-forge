@@ -82,17 +82,17 @@ export class UI implements GameUI {
         <div class="logo"><h1>CROWD<br><span>FORGE</span></h1><p>Grow your army. Choose wisely.</p></div>
         <div class="menu-bottom">
           <div class="mission-peek">${missions}</div>
-          <button class="btn primary" data-a="play">▶ LEVEL ${d.level}</button>
+          <button class="btn primary" data-a="arena">▶ LEVEL ${d.arenaLevel}</button>
           <div class="row3">
+            <button class="btn blue" data-a="play">🏃 RUNNER ${d.level}</button>
             <button class="btn purple" data-a="endless">∞ ENDLESS</button>
             <button class="btn blue" data-a="lanes">⚔ LANES ${d.lanesLevel}</button>
-            <button class="btn gold" data-a="shop">🛒 SHOP</button>
           </div>
           <div class="grid4">
+            <button class="btn gold" data-a="shop"><b>🛒</b>Shop</button>
             <button class="btn" data-a="missions"><b>🎯</b>Missions</button>
             <button class="btn" data-a="trophies"><b>🏆</b>Trophies</button>
             <button class="btn" data-a="worlds"><b>🗺️</b>Worlds</button>
-            <button class="btn" data-a="debug"><b>🛠️</b>Dev</button>
           </div>
           <div class="muted" style="text-align:center">Best endless: ${fmt(d.endlessBest.score)} pts · ${fmt(d.endlessBest.distance)}m</div>
         </div>
@@ -101,7 +101,8 @@ export class UI implements GameUI {
       const a = (e.target as HTMLElement).closest('[data-a]')?.getAttribute('data-a');
       if (!a) return;
       this.click();
-      if (a === 'play') this.startLevel();
+      if (a === 'arena') this.startArena();
+      else if (a === 'play') this.startLevel();
       else if (a === 'endless') this.startEndless();
       else if (a === 'lanes') this.startLanes();
       else if (a === 'shop') this.showShop('upgrades');
@@ -120,6 +121,12 @@ export class UI implements GameUI {
     this.clearScreen();
     this.showHud();
     this.game.startLevel({ levelNumber, seed });
+  }
+
+  startArena(level?: number, seed?: number): void {
+    this.clearScreen();
+    this.showHud();
+    this.game.startArena({ level, seed });
   }
 
   startLanes(level?: number, seed?: number): void {
@@ -184,8 +191,8 @@ export class UI implements GameUI {
     const sub = el.querySelector('.sub') as HTMLElement;
     sub.textContent = s.sub ?? '';
     sub.style.display = s.sub ? '' : 'none';
-    if (s.mode === 'lanes') {
-      title.textContent = `LANE BATTLE ${s.level}`;
+    if (s.mode === 'lanes' || s.mode === 'arena') {
+      title.textContent = s.mode === 'arena' ? `LEVEL ${s.level}` : `LANE BATTLE ${s.level}`;
       prog.style.display = '';
       (prog.firstElementChild as HTMLElement).style.width = (s.progress * 100).toFixed(1) + '%';
     } else if (s.mode === 'level') {
@@ -242,8 +249,9 @@ export class UI implements GameUI {
     this.game.paused = true;
     const lv = this.game.level;
     const lanes = this.game.lanes?.lv;
+    const arena = this.game.arena?.lv;
     this.showModal(
-      `<h2>PAUSED</h2><div class="sub">${lanes ? `Lane Battle ${lanes.level} · seed ${lanes.code} · D${lanes.D.toFixed(2)}` : lv ? `Level ${lv.levelNumber} · seed ${lv.code} · D${lv.difficulty.toFixed(2)} · ${this.game.envName()}` : 'Endless'}</div>
+      `<h2>PAUSED</h2><div class="sub">${arena ? `Level ${arena.level} · seed ${arena.code} · D${arena.D.toFixed(2)}` : lanes ? `Lane Battle ${lanes.level} · seed ${lanes.code} · D${lanes.D.toFixed(2)}` : lv ? `Level ${lv.levelNumber} · seed ${lv.code} · D${lv.difficulty.toFixed(2)} · ${this.game.envName()}` : 'Endless'}</div>
        <div class="btns">
          <button class="btn primary" data-a="resume">▶ RESUME</button>
          <button class="btn blue" data-a="restart">↻ RESTART</button>
@@ -254,7 +262,8 @@ export class UI implements GameUI {
         this.modal = null;
         this.game.paused = false;
         if (a === 'restart') {
-          if (lanes) this.game.startLanes({ level: lanes.level, seed: lanes.seed });
+          if (arena) this.game.startArena({ level: arena.level, seed: arena.seed });
+          else if (lanes) this.game.startLanes({ level: lanes.level, seed: lanes.seed });
           else if (this.game.endless) this.game.startEndless(this.game.endless.seed);
           else if (lv) this.game.startLevel({ level: lv });
         } else if (a === 'quit') {
@@ -277,7 +286,21 @@ export class UI implements GameUI {
     ].join('');
     let body: string;
     let buttons: string;
-    if (r.mode === 'lanes' && r.lanes) {
+    if (r.mode === 'arena' && r.lanes) {
+      const ln = r.lanes;
+      body = `<h2 class="${r.won ? 'win' : 'lose'}">${r.won ? 'VICTORY!' : 'DEFEATED'}</h2>
+        <div class="sub">Level ${r.level} · seed ${r.code} · D${r.difficulty.toFixed(2)}<br>${ln.reason}</div>
+        <div class="stats">
+          <div class="stat"><span>Time</span><b>${Math.floor(ln.time / 60)}:${String(Math.floor(ln.time % 60)).padStart(2, '0')}</b></div>
+          <div class="stat"><span>Fortress destroyed</span><b>${Math.round(ln.castlePct * 100)}%</b></div>
+          <div class="stat"><span>Enemies defeated</span><b>${fmt(r.enemies)}</b></div>
+          <div class="stat"><span>Peak army</span><b>${fmt(r.maxArmy)}</b></div>
+        </div>
+        <div class="muted" style="text-align:center">💡 Best plan found by the generator: aim at <b>${ln.bestNote}</b>${ln.towers ? ` · you cleared ${ln.towers} hedge${ln.towers > 1 ? 's' : ''}` : ''}</div>`;
+      buttons = r.won
+        ? `<button class="btn primary" data-a="arenaNext">NEXT LEVEL ▶<small>a brand-new generated level</small></button><button class="btn" data-a="menu">🏠 MENU</button>`
+        : `<button class="btn primary" data-a="arenaRetry">↻ TRY AGAIN</button><button class="btn" data-a="menu">🏠 MENU</button>`;
+    } else if (r.mode === 'lanes' && r.lanes) {
       const ln = r.lanes;
       body = `<h2 class="${r.won ? 'win' : 'lose'}">${r.won ? 'VICTORY!' : 'DEFEATED'}</h2>
         <div class="sub">Lane Battle ${r.level} · seed ${r.code} · D${r.difficulty.toFixed(2)}<br>${ln.reason}</div>
@@ -317,13 +340,15 @@ export class UI implements GameUI {
         ? `<button class="btn primary" data-a="next">NEXT LEVEL ▶<small>a brand-new generated level</small></button><button class="btn" data-a="menu">🏠 MENU</button>`
         : `<button class="btn primary" data-a="retry">↻ TRY AGAIN</button><button class="btn" data-a="menu">🏠 MENU</button>`;
     }
-    const coins = `<div class="coinline"><span class="cnt">0</span></div>${r.coinsBonus ? `<div class="muted" style="text-align:center">${fmt(r.coinsBase)} + bonus ${fmt(r.coinsBonus)} ${r.mode === 'lanes' ? '(speed bonus)' : `(×${r.mult})`}</div>` : ''}`;
+    const coins = `<div class="coinline"><span class="cnt">0</span></div>${r.coinsBonus ? `<div class="muted" style="text-align:center">${fmt(r.coinsBase)} + bonus ${fmt(r.coinsBonus)} ${r.mode === 'lanes' || r.mode === 'arena' ? '(speed bonus)' : `(×${r.mult})`}</div>` : ''}`;
     this.showModal(`${body}${coins}<div class="rewards-list">${rewards}</div><div class="btns">${buttons}</div>`, (a) => {
       this.modal?.remove();
       this.modal = null;
       if (a === 'next') this.startLevel();
       else if (a === 'retry') this.startLevel(r.level, this.game.level?.seed);
       else if (a === 'endless') this.startEndless();
+      else if (a === 'arenaNext') this.startArena();
+      else if (a === 'arenaRetry') this.startArena(r.level, r.lanes?.seed);
       else if (a === 'lanesNext') this.startLanes();
       else if (a === 'lanesRetry') this.startLanes(r.level, r.lanes?.seed);
       else {
@@ -482,6 +507,7 @@ export class UI implements GameUI {
       'Settings',
       `${row('sound', '🔊 Sound', s.sound)}${row('haptics', '📳 Vibration', s.haptics)}${row('quality', '✨ High quality', s.quality === 'high')}${row('showHints', '💡 Hints', s.showHints)}
        <div class="list-item"><div class="top"><span>Save seed</span><small>${this.prog.data.masterSeed.toString(36).toUpperCase()}</small></div><div class="muted">Every level number maps to a fixed generated level for this save.</div></div>
+       <button class="btn" data-dev style="width:100%;margin-top:8px">🛠 Developer panel</button>
        <button class="btn red" data-reset style="width:100%;margin-top:8px">Reset progress</button>`,
       (el) => {
         el.addEventListener('click', (e) => {
@@ -497,6 +523,7 @@ export class UI implements GameUI {
             this.prog.persist();
             this.showSettings();
           }
+          if (t.closest('[data-dev]')) this.onOpenDebug();
           if (t.closest('[data-reset]') && confirm('Reset all progress? This cannot be undone.')) {
             this.prog.data = SaveSystem.reset();
             this.prog.ensureMissions();

@@ -17,6 +17,7 @@ export interface SaveData {
   masterSeed: number;
   level: number;
   lanesLevel: number;
+  arenaLevel: number;
   coins: number;
   totalCoins: number;
   owned: Record<string, string[]>;
@@ -44,6 +45,7 @@ export function defaultSave(): SaveData {
     masterSeed: SeedManager.randomSeed(),
     level: 1,
     lanesLevel: 1,
+    arenaLevel: 1,
     coins: 0,
     totalCoins: 0,
     owned: { skins: ['classic'], colors: ['blue'], trails: ['none'], weapons: ['none'], banners: ['none'], victory: ['cheer'], special: [] },

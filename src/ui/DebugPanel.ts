@@ -77,6 +77,7 @@ export class DebugPanel {
           <button data-a="play">▶ Play seed</button>
           <button data-a="regen">🎲 New random seed</button>
           <button data-a="endless">∞ Endless (seed)</button>
+          <button data-a="arena">▶ Arena (seed/level)</button>
           <button data-a="lanes">⚔ Lane Battle (seed/level)</button>
           <button data-a="skip">⏭ Skip segment</button>
           <button data-a="inv" class="${dbg.invincible ? 'on' : ''}">🛡 Invincible</button>
@@ -96,7 +97,8 @@ choice quality ${pct(ds.avgChoiceQuality)} · reaction ${ds.avgReaction.toFixed(
 units lost ${fmt(ds.totalLost)} · enemies defeated ${fmt(ds.totalDefeated)}</pre>
       </fieldset>`;
 
-    if (g.lanes) html += this.lanesReport();
+    if (g.arena) html += this.arenaReport();
+    else if (g.lanes) html += this.lanesReport();
     else if (lv) html += this.levelReport(lv);
     else if (g.endless) html += this.endlessReport();
     this.body.innerHTML = html;
@@ -131,6 +133,26 @@ mix: ${share}</pre>
       <fieldset><legend>Segments (click to jump) — predicted army entering → leaving</legend>
         <table><tr><th>#</th><th>type</th><th>entry</th><th>exit</th><th>score</th></tr>${rows}</table>
       </fieldset>`;
+  }
+
+  private arenaReport(): string {
+    const lv = this.game.arena!.lv;
+    const r = lv.report;
+    const bays = lv.bays.map((b, i) => `bay ${i + 1}: ${b.kind.padEnd(10)} ${b.hedge ? `[HEDGE ${fmt(b.hedge.hp)}] ` : ''}${b.gates.map((g) => (g.op === 'add' ? '+' : g.op === 'mul' ? '×' : g.op === 'sub' ? '−' : '÷') + g.v).join(' ')}`).join('\n');
+    const strat = r.strategies.map((s) => `<span class="${s.won ? 'ok' : 'no'}">${s.won ? 'WIN ' : 'LOSE'}</span> ${s.time.toFixed(0).padStart(4)}s  base ${fmt(Math.max(0, Math.round(s.baseLeft)))}  ${esc(s.name)}`).join('\n');
+    const waves = lv.waves.map((w) => `${w.t.toFixed(0)}s ${fmt(w.count)}${w.final ? ' FINAL' : ''}`).join(' · ');
+    return `<fieldset><legend>Arena level ${lv.code} (attempt ${lv.attempt + 1})</legend>
+      <pre>L${lv.level} · D${lv.D.toFixed(2)} · fire ${lv.fireRate.toFixed(2)}/s · ${lv.genMs.toFixed(0)}ms
+validation: <span class="${r.valid ? 'ok' : 'no'}">${r.valid ? 'VALID' : 'BEST EFFORT — ' + esc(r.reasons.join('; '))}</span>
+${r.notes.map(esc).join('\n')}
+casual win rate ${pct(r.casualWinRate)} · wave ratio ${r.waveRatio.toFixed(2)} · time limit ${lv.maxTime.toFixed(0)}s
+
+${bays}
+
+Simulated strategies:
+${strat}
+
+Horde waves: ${waves}</pre></fieldset>`;
   }
 
   private lanesReport(): string {
@@ -229,6 +251,12 @@ Waves: ${waves}</pre></fieldset>`;
         g.debug.seed = seed;
         this.ui.startEndless();
         g.debug.seed = null;
+        this.render();
+        break;
+      }
+      case 'arena': {
+        const seed = this.parseSeed();
+        this.ui.startArena(this.levelNumber(), seed ?? undefined);
         this.render();
         break;
       }

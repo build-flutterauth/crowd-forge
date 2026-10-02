@@ -3,7 +3,7 @@
 import { GEN } from '../config/genConfig';
 
 export interface RunRecord {
-  mode: 'level' | 'endless' | 'lanes';
+  mode: 'level' | 'endless' | 'lanes' | 'arena';
   level: number;
   won: boolean;
   progress: number; // 0..1 of the level reached

@@ -432,8 +432,8 @@ export class LanesMode {
         e.pulse = 0.12;
         u.ei++;
         if (op === 'mul') {
-          const room = LANES.playerCap - P.length;
-          const k = Math.max(1, Math.min(splitCount(v), room + 1));
+          const room = LANES.playerCap - 300 - P.length;
+          const k = Math.max(1, Math.min(splitCount(v), room > 0 ? room + 1 : 1));
           const base = Math.floor(total / k);
           let rem = total - base * k;
           u.w = base + (rem-- > 0 ? 1 : 0);
