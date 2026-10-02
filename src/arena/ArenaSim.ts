@@ -65,6 +65,16 @@ export function applyArenaGate(w: number, op: ArenaOp, v: number): number {
   }
 }
 
+/**
+ * Enemies walking DOWN through your gates are weakened by them: a ×N gate
+ * divides them by N, a ÷N trap multiplies them. (+/− gates don't affect them.)
+ */
+export function enemyThroughGate(w: number, op: ArenaOp, v: number): number {
+  if (op === 'mul') return w / v;
+  if (op === 'div') return w * v;
+  return w;
+}
+
 /** Output of one shot through a bay (hedge treated as broken or blocking). */
 export function bayOutput(b: Bay, hedgeBroken: boolean): number {
   const events: { s: number; g?: ArenaGate; h?: Hedge }[] = b.gates.map((g) => ({ s: g.s, g }));
@@ -218,7 +228,12 @@ export function simulateArena(lv: ArenaLevelData, policy: ArenaPolicy, o: ArenaS
       }
     }
     // the field: enemies that broke through hunt the cannon (meet raw shots in the aimed bay)
-    for (const e of fieldE) e.s -= ARENA.enemySpeed * dt;
+    for (const e of fieldE) {
+      const prev = e.s;
+      e.s -= ARENA.enemySpeed * dt;
+      // leaked enemies head for the cannon, i.e. down the aimed bay, through its gates
+      for (const g of lv.bays[bay].gates) if (prev > g.s && e.s <= g.s) e.count = enemyThroughGate(e.count, g.op, g.v);
+    }
     const aimed = bayP[bay].slice().sort((a, c) => c.s - a.s);
     clash(aimed, fieldE);
     for (const e of fieldE) if (e.count > 0 && e.s <= 0.6) {

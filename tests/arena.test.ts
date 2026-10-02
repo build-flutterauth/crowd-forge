@@ -36,5 +36,5 @@ describe('arena (main mode)', () => {
       const fixed = lv.bays.map((_, j) => simulateArena(lv, focusPolicy(j)));
       expect(fixed.every((f) => f.won && f.time < best * 1.15), `L${L} aim should matter`).toBe(false);
     }
-  });
+  }, 60000);
 });

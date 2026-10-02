@@ -11,10 +11,10 @@ import type { Overlay, Particles } from '../render/Effects';
 import type { Stage3D } from '../render/Stage3D';
 import { unitGeometry, weaponGeometry } from '../render/UnitGeometry';
 import { fmt } from '../sim/rules';
-import { applyArenaGate, splitCount, type ArenaGate, type ArenaLevelData, type Bay } from './ArenaSim';
+import { applyArenaGate, enemyThroughGate, splitCount, type ArenaGate, type ArenaLevelData, type Bay } from './ArenaSim';
 
 interface PUnit { x: number; s: number; w: number; bay: number; ei: number; born: number; off: number }
-interface EUnit { x: number; s: number; w: number; phase: number }
+interface EUnit { x: number; s: number; w: number; phase: number; stun: number; hit: number; bay: number }
 
 interface RtHedge {
   bay: number;
@@ -76,6 +76,7 @@ export class ArenaMode {
   private fortressLabel: HTMLDivElement;
   private baseLabel: HTMLDivElement;
   private hordeLabel: HTMLDivElement;
+  private leakLabel: HTMLDivElement;
   private waveState: { ents: number; spawned: number; started: boolean; per: number; rem: number }[];
   castle: number;
   base: number;
@@ -268,6 +269,7 @@ export class ArenaMode {
     this.fortressLabel = overlay.label('boss-hp');
     this.baseLabel = overlay.label('base-hp');
     this.hordeLabel = overlay.label('lane-warn');
+    this.leakLabel = overlay.label('lane-warn leak');
     this.waveState = lv.waves.map((w) => {
       const ents = Math.max(4, Math.min(320, Math.round(Math.sqrt(w.count) * 7)));
       return { ents, spawned: 0, started: false, per: Math.floor(w.count / ents), rem: w.count % ents };
@@ -499,7 +501,7 @@ export class ArenaMode {
           this.enemies[this.enemies.length - 1].w += wgt;
           continue;
         }
-        this.enemies.push({ x: (Math.random() * 2 - 1) * (th - 0.6), s: ARENA.length - 0.3 - Math.random() * 3, w: wgt, phase: Math.random() * 6 });
+        this.enemies.push({ x: (Math.random() * 2 - 1) * (th - 0.6), s: ARENA.length - 0.3 - Math.random() * 3, w: wgt, phase: Math.random() * 6, stun: 0, hit: 0, bay: -1 });
       }
     });
   }
@@ -510,16 +512,53 @@ export class ArenaMode {
     for (let i = E.length - 1; i >= 0; i--) {
       const e = E[i];
       if (this.state !== 'play') continue;
-      e.s -= ARENA.enemySpeed * dt;
+      if (e.hit > 0) e.hit -= dt;
+      // enemies under fire are slowed to a crawl (not pinned — a big leak still gets through eventually)
+      if (e.stun > 0) e.stun -= dt;
+      const slow = e.stun > 0 ? 0.25 : 1;
+      const prevS = e.s;
+      e.s -= ARENA.enemySpeed * slow * dt;
       if (e.s > z1 + 1) {
         // squeeze through the funnel gap
         const l2 = Math.max(0.3, corridorHalf(e.s - 1.5) - 0.4);
         if (Math.abs(e.x) > l2) e.x += (Math.sign(e.x) * l2 - e.x) * Math.min(1, dt * 6);
         e.x += Math.sin(time * 2 + e.phase) * 0.15 * dt;
       } else {
-        // broke through: hunt the cannon
-        const d = this.cannonX - e.x;
-        e.x += Math.sign(d) * Math.min(Math.abs(d), ARENA.enemyChase * dt);
+        // broke through: commit to the bay the cannon is aiming into and march down it,
+        // staying inside the fences (so they pass that bay's gates and hedge); below the
+        // gates they hunt the cannon freely
+        const [gz0, gz1] = ARENA.gateZone;
+        if (e.s > gz0 - 0.5) {
+          if (e.bay < 0 && e.s <= gz1 + 0.5) e.bay = this.bayAt(this.cannonX);
+          if (e.bay >= 0) {
+            const b = this.lv.bays[e.bay];
+            const tx = Math.max(b.x0 + 0.35, Math.min(b.x1 - 0.35, e.x));
+            e.x += Math.sign(tx - e.x) * Math.min(Math.abs(tx - e.x), 10 * dt);
+          } else {
+            const d = this.cannonX - e.x;
+            e.x += Math.sign(d) * Math.min(Math.abs(d), ARENA.enemyChase * slow * dt);
+          }
+        } else {
+          const d = this.cannonX - e.x;
+          e.x += Math.sign(d) * Math.min(Math.abs(d), ARENA.enemyChase * slow * dt);
+        }
+        // walking down through your gates weakens them (×N gate → ÷N)
+        for (const g of this.gates) {
+          const gg = g.g;
+          if (prevS > gg.s && e.s <= gg.s && e.x >= gg.x0 && e.x <= gg.x1 && (gg.op === 'mul' || gg.op === 'div')) {
+            const before = e.w;
+            e.w = Math.max(gg.op === 'div' ? 1 : 0, Math.round(enemyThroughGate(e.w, gg.op, gg.v)));
+            g.pulse = 0.12;
+            if (e.w <= 0) {
+              this.stats.kills += before;
+              this.particles.emit(e.x, 0.6, -gg.s, 5, '#58b6ff', { speed: 3, up: 3, size: 0.12 });
+            }
+            if (this.gateFloatT <= 0) {
+              this.overlay.float(gg.op === 'mul' ? `÷${gg.v}` : `×${gg.v}`, new THREE.Vector3(e.x, 1.6, -gg.s), gg.op === 'mul' ? 'good' : 'bad', 0.8);
+              this.gateFloatT = 0.25;
+            }
+          }
+        }
         // hedges block (and are chewed by) enemies too
         for (const h of this.hedges) {
           if (!h.broken && e.x > h.x0 && e.x < h.x1 && e.s < h.s1 && e.s > h.s0 - 0.5) {
@@ -543,6 +582,8 @@ export class ArenaMode {
       }
     }
   }
+
+  private gateFloatT = 0;
 
   private collide(): void {
     const E = this.enemies;
@@ -571,6 +612,8 @@ export class ArenaMode {
           const k = Math.min(p.w, e.w);
           p.w -= k;
           e.w -= k;
+          e.stun = 0.3;
+          e.hit = 0.12;
           this.stats.kills += k;
           if (fx++ < 8) this.particles.emit((p.x + e.x) / 2, 0.5, -(p.s + e.s) / 2, 3, Math.random() < 0.5 ? '#e8413c' : this.color, { speed: 3, up: 3, size: 0.1, life: 0.4 });
           if (p.w <= 0) break;
@@ -610,7 +653,7 @@ export class ArenaMode {
     const ea = this.eMesh.instanceMatrix.array as Float32Array;
     let m = 0;
     for (const e of this.enemies) {
-      const sc = 0.95 + Math.min(1, Math.log10(Math.max(1, e.w)) * 0.22);
+      const sc = (0.95 + Math.min(1, Math.log10(Math.max(1, e.w)) * 0.22)) * (e.hit > 0 ? 1.25 : 1);
       const o = m * 16;
       ea[o] = -sc; ea[o + 1] = 0; ea[o + 2] = 0; ea[o + 3] = 0;
       ea[o + 4] = 0; ea[o + 5] = sc; ea[o + 6] = 0; ea[o + 7] = 0;
@@ -667,6 +710,19 @@ export class ArenaMode {
       this.overlay.place(this.hordeLabel, new THREE.Vector3(0, 2.2, -ARENA.funnel.mouthS));
       this.hordeLabel.textContent = `⚔ ${fmt(tot)}`;
     } else this.hordeLabel.style.display = 'none';
+    this.gateFloatT -= realDt;
+    // strength of whatever has broken through, shown over the front-most leaked enemy
+    let leak = 0;
+    let front: EUnit | null = null;
+    for (const e of this.enemies) if (e.s < ARENA.gateZone[1] + 1) {
+      leak += e.w;
+      if (!front || e.s < front.s) front = e;
+    }
+    if (front) {
+      this.leakLabel.style.display = '';
+      this.overlay.place(this.leakLabel, new THREE.Vector3(front.x, 1.9, -front.s));
+      this.leakLabel.textContent = `⚠ ${fmt(leak)}`;
+    } else this.leakLabel.style.display = 'none';
     this.dmgT += realDt;
     if (this.dmgT > 0.35 && this.dmgAcc > 0) {
       this.overlay.float(`−${fmt(this.dmgAcc)}`, new THREE.Vector3((Math.random() - 0.5) * 6, 2.5, -(L - 0.5)), 'golden');
@@ -684,6 +740,7 @@ export class ArenaMode {
     this.fortressLabel.remove();
     this.baseLabel.remove();
     this.hordeLabel.remove();
+    this.leakLabel.remove();
     for (const h of this.hedges) h.label.remove();
   }
 }
