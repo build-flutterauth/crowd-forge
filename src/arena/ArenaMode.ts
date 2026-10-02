@@ -343,6 +343,7 @@ export class ArenaMode {
       if (this.castle <= 0) this.finish(true, 'Fortress destroyed');
       else if (this.base <= 0) this.finish(false, 'The horde reached your cannon');
       else if (this.t >= lv.maxTime) this.finish(false, 'Out of time — the horde kept coming');
+      else this.checkDoomed(dt);
     } else {
       this.endT += realDt;
       if (this.endT > 1.6 && this.endT - realDt <= 1.6) this.onEnd(this.result());
@@ -362,7 +363,63 @@ export class ArenaMode {
     cam.lookAt(0, 0, portrait ? -18 : -16);
   }
 
-  private finish(won: boolean, reason: string): void {
+  // ------------------------------------------------------------------
+  // "No way back": end early once the outcome is mathematically decided
+  // ------------------------------------------------------------------
+
+  private doomT = 0;
+  private doomCheckT = 0;
+  private dmgHist: { t: number; castle: number }[] = [];
+
+  /** Generous to the player: only fires when even the best case can't recover. */
+  private doomReason(): string | null {
+    const lv = this.lv;
+    // 1) a breakthrough past all gates that outweighs the base, even after every shot the cannon can still fire
+    const z0 = ARENA.gateZone[0];
+    let leak = 0;
+    let farthest = 0;
+    for (const e of this.enemies) if (e.s < z0 - 0.5) {
+      leak += e.w;
+      farthest = Math.max(farthest, e.s);
+    }
+    if (leak > 0) {
+      const maxArrival = farthest / (ARENA.enemySpeed * 0.25); // as if slowed the whole way
+      const killable = lv.fireRate * maxArrival;
+      if (leak - killable >= this.base) return `A breakthrough of ${fmt(leak)} outweighs your base (${fmt(Math.max(0, this.base))})`;
+    }
+    // 2) not enough time left, even at the best damage rate reached so far
+    const left = lv.maxTime - this.t;
+    if (left < 20 && this.dmgHist.length > 6) {
+      let best = 0;
+      for (let i = 0; i < this.dmgHist.length; i++) {
+        for (let j = i + 1; j < this.dmgHist.length; j++) {
+          const span = this.dmgHist[j].t - this.dmgHist[i].t;
+          if (span >= 2.5) {
+            best = Math.max(best, (this.dmgHist[i].castle - this.dmgHist[j].castle) / span);
+            break;
+          }
+        }
+      }
+      if (Math.max(0, this.castle) > best * 1.5 * left + 1) return `Not enough time: ${fmt(this.castle)} fortress HP left with ${Math.ceil(left)}s to go`;
+    }
+    return null;
+  }
+
+  private checkDoomed(dt: number): void {
+    this.doomCheckT -= dt;
+    if (this.doomCheckT > 0) return;
+    this.doomCheckT = 0.25;
+    this.dmgHist.push({ t: this.t, castle: this.castle });
+    if (this.dmgHist.length > 240) this.dmgHist.shift();
+    const why = this.doomReason();
+    this.doomT = why ? this.doomT + 0.25 : 0;
+    if (why && this.doomT >= 1.25) {
+      this.onBanner('NO WAY BACK', 'danger', 1.6);
+      this.finish(false, why, true);
+    }
+  }
+
+  private finish(won: boolean, reason: string, early = false): void {
     this.state = won ? 'won' : 'lost';
     this.reason = reason;
     this.endT = 0;
@@ -378,7 +435,7 @@ export class ArenaMode {
     } else {
       sfx.play('lose');
       haptic(200);
-      this.onBanner(this.t >= this.lv.maxTime ? 'TIME UP' : 'OVERRUN', 'danger', 1.6);
+      if (!early) this.onBanner(this.t >= this.lv.maxTime ? 'TIME UP' : 'OVERRUN', 'danger', 1.6);
     }
   }
 
