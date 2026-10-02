@@ -89,10 +89,10 @@ export class UI implements GameUI {
             <button class="btn blue" data-a="lanes">⚔ LANES ${d.lanesLevel}</button>
           </div>
           <div class="grid4">
+            <button class="btn" data-a="levels"><b>🗂️</b>Levels</button>
             <button class="btn gold" data-a="shop"><b>🛒</b>Shop</button>
             <button class="btn" data-a="missions"><b>🎯</b>Missions</button>
             <button class="btn" data-a="trophies"><b>🏆</b>Trophies</button>
-            <button class="btn" data-a="worlds"><b>🗺️</b>Worlds</button>
           </div>
           <div class="muted" style="text-align:center">Best endless: ${fmt(d.endlessBest.score)} pts · ${fmt(d.endlessBest.distance)}m</div>
         </div>
@@ -102,6 +102,7 @@ export class UI implements GameUI {
       if (!a) return;
       this.click();
       if (a === 'arena') this.startArena();
+      else if (a === 'levels') this.showLevels('arena');
       else if (a === 'play') this.startLevel();
       else if (a === 'endless') this.startEndless();
       else if (a === 'lanes') this.startLanes();
@@ -151,6 +152,7 @@ export class UI implements GameUI {
       <div>
         <div class="hud">
           <button class="icon-btn" data-a="pause">⏸</button>
+          <button class="icon-btn speed-btn" data-a="speed">${this.game.gameSpeed}×</button>
           <div class="center"><div class="title"></div><div class="prog"><i></i></div><div class="sub"></div></div>
           <span class="coins"></span>
         </div>
@@ -160,6 +162,14 @@ export class UI implements GameUI {
     el.querySelector('[data-a=pause]')!.addEventListener('click', () => {
       this.click();
       this.pause();
+    });
+    const sp = el.querySelector('[data-a=speed]') as HTMLElement;
+    sp.classList.toggle('fast', this.game.gameSpeed > 1);
+    sp.addEventListener('click', () => {
+      this.click();
+      const v = this.game.cycleSpeed();
+      sp.textContent = v + '×';
+      sp.classList.toggle('fast', v > 1);
     });
     this.root.appendChild(el);
     this.hudEl = el;
@@ -467,6 +477,42 @@ export class UI implements GameUI {
     bind?.(el);
     this.root.appendChild(el);
     this.screen = el;
+  }
+
+  showLevels(mode: 'arena' | 'runner' | 'lanes'): void {
+    const d = this.prog.data;
+    const unlocked = mode === 'arena' ? d.arenaLevel : mode === 'runner' ? d.level : d.lanesLevel;
+    const shown = Math.max(unlocked + 5, 20);
+    let tiles = '';
+    for (let n = 1; n <= shown; n++) {
+      const open = n <= unlocked;
+      const boss = mode === 'runner' && n % 5 === 0;
+      tiles += `<button class="lvl ${open ? '' : 'locked'} ${n === unlocked ? 'current' : ''}" data-lvl="${n}" ${open ? '' : 'disabled'}>
+        ${open ? n : '🔒'}${n === unlocked ? '<small>NEXT</small>' : n < unlocked ? '<small>✓</small>' : ''}${boss && open ? '<i>👑</i>' : ''}</button>`;
+    }
+    const tab = (m: string, label: string) => `<button class="tab ${m === mode ? 'on' : ''}" data-mode="${m}">${label}</button>`;
+    this.panel(
+      'Select Level',
+      `<div class="tabs">${tab('arena', '▶ Arena')}${tab('runner', '🏃 Runner')}${tab('lanes', '⚔ Lanes')}</div>
+       <p class="muted">Every level number is a fixed generated layout for your save — replay any level you've unlocked. Beat level ${unlocked} to unlock the next.</p>
+       <div class="lvl-grid">${tiles}</div>`,
+      (el) => {
+        el.addEventListener('click', (e) => {
+          const t = e.target as HTMLElement;
+          const m = t.closest('[data-mode]')?.getAttribute('data-mode');
+          if (m) {
+            this.click();
+            return this.showLevels(m as 'arena' | 'runner' | 'lanes');
+          }
+          const n = Number(t.closest('[data-lvl]:not([disabled])')?.getAttribute('data-lvl'));
+          if (!n) return;
+          this.click();
+          if (mode === 'arena') this.startArena(n);
+          else if (mode === 'runner') this.startLevel(n);
+          else this.startLanes(n);
+        });
+      },
+    );
   }
 
   showMissions(): void {

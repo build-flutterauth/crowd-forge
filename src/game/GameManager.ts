@@ -233,6 +233,18 @@ export class GameManager {
     this.run = { startArmy: start, maxArmy: start, lost: 0, gained: 0, enemies: 0, multGates: 0, gatesTaken: 0, bosses: 0, rare: 0, qSum: 0, qN: 0, rSum: 0, rN: 0, highestMult: 0 };
   }
 
+  /** 1×, 2× or 3× simulation speed (persisted) */
+  get gameSpeed(): number {
+    return this.prog.data.settings.gameSpeed || 1;
+  }
+
+  cycleSpeed(): number {
+    const s = this.prog.data.settings;
+    s.gameSpeed = s.gameSpeed >= 3 ? 1 : (s.gameSpeed || 1) + 1;
+    this.prog.persist();
+    return s.gameSpeed;
+  }
+
   setQuality(q: 'high' | 'low'): void {
     this.stage.setQuality(q);
     this.env.density = q === 'high' ? 1 : 0.45;
@@ -452,11 +464,12 @@ export class GameManager {
     const target = this.bosses.introActive ? 0.22 : this.slowT > 0 ? GAME.feel.slowmoScale : 1;
     if (this.slowT > 0) this.slowT -= realDt;
     this.timeScale += (target - this.timeScale) * Math.min(1, realDt * 10);
-    const dt = this.paused ? 0 : realDt * this.timeScale;
+    const playing = this.phase === 'run' || this.phase === 'runway';
+    const speed = playing ? this.gameSpeed : 1;
+    const dt = this.paused ? 0 : realDt * this.timeScale * speed;
     this.time += dt;
 
     this.input.update(this.paused ? 0 : realDt);
-    const playing = this.phase === 'run' || this.phase === 'runway';
 
     if (this.phase === 'menu') {
       this.army.s += dt * 4;
@@ -464,7 +477,9 @@ export class GameManager {
       this.cam.orbit = Math.sin(this.time * 0.2) * 0.5;
     } else if (playing && !this.paused) {
       this.army.targetX = this.input.target;
-      this.stepRun(dt);
+      // sub-step at higher game speeds so collisions and triggers stay exact
+      const n = Math.ceil(speed);
+      for (let k = 0; k < n && (this.phase === 'run' || this.phase === 'runway'); k++) this.stepRun(dt / n);
     } else if (this.phase === 'dying') {
       this.dyingT -= realDt;
       if (this.dyingT <= 0) this.endRun(false);
@@ -732,10 +747,13 @@ export class GameManager {
     if (ln.slowmo > 0) ln.slowmo -= realDt;
     const target = ln.slowmo > 0 ? 0.35 : 1;
     this.timeScale += (target - this.timeScale) * Math.min(1, realDt * 10);
-    const dt = this.paused ? 0 : realDt * this.timeScale;
-    this.time += dt;
+    const dt = this.paused ? 0 : realDt * this.timeScale * this.gameSpeed;
     this.input.update(this.paused ? 0 : realDt);
-    ln.update(dt, this.paused ? 0 : realDt, this.input.target, this.time);
+    const n = Math.ceil(this.gameSpeed);
+    for (let k = 0; k < n; k++) {
+      this.time += dt / n;
+      ln.update(dt / n, this.paused ? 0 : realDt / n, this.input.target, this.time);
+    }
     this.env.update(dt, 20, this.stage.camera.position);
     this.particles.update(dt);
     this.overlay.update(realDt);
@@ -823,10 +841,13 @@ export class GameManager {
     if (ar.slowmo > 0) ar.slowmo -= realDt;
     const target = ar.slowmo > 0 ? 0.35 : 1;
     this.timeScale += (target - this.timeScale) * Math.min(1, realDt * 10);
-    const dt = this.paused ? 0 : realDt * this.timeScale;
-    this.time += dt;
+    const dt = this.paused ? 0 : realDt * this.timeScale * this.gameSpeed;
     this.input.update(this.paused ? 0 : realDt);
-    ar.update(dt, this.paused ? 0 : realDt, this.input.target, this.time);
+    const n = Math.ceil(this.gameSpeed);
+    for (let k = 0; k < n; k++) {
+      this.time += dt / n;
+      ar.update(dt / n, this.paused ? 0 : realDt / n, this.input.target, this.time);
+    }
     this.env.update(dt, 20, this.stage.camera.position);
     this.particles.update(dt);
     this.overlay.update(realDt);

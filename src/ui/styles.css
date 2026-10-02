@@ -193,7 +193,17 @@ body.in-menu .dbg-toggle { display: none; }
 
 .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .row3 .btn { font-size: 15px; padding: 14px 6px; }
-.hud .sub { font-weight: 800; font-size: 13px; margin-top: 4px; text-shadow: 0 2px 0 rgba(0,0,0,.45); }
+.hud .sub { font-weight: 800; font-size: 12px; white-space: nowrap; margin-top: 4px; text-shadow: 0 2px 0 rgba(0,0,0,.45); }
 .tower-hp { background: #5a5f66; color: #fff; padding: 2px 10px; border-radius: 8px; font-size: 18px; box-shadow: 0 0 0 2px #fff; }
 .base-hp { background: #ff4b5c; color: #fff; padding: 2px 9px; border-radius: 999px; font-size: 14px; box-shadow: 0 0 0 2px #fff; }
 .lane-warn { background: rgba(232,65,60,.9); color: #fff; padding: 2px 8px; border-radius: 8px; font-size: 13px; }
+
+.speed-btn { font-weight: 900; font-size: 16px; color: #fff; }
+.speed-btn.fast { background: rgba(255,170,30,.9) !important; color: #3a2400; }
+.lvl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 10px; padding-bottom: 20px; }
+.lvl { position: relative; aspect-ratio: 1; border-radius: 16px; background: linear-gradient(180deg, #4aa3ff, #2f74e0); font-weight: 900; font-size: 22px; box-shadow: 0 4px 0 rgba(0,0,0,.35); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.lvl:active { transform: translateY(2px); }
+.lvl small { font-size: 10px; opacity: .9; margin-top: 2px; }
+.lvl i { position: absolute; top: -6px; right: -4px; font-style: normal; font-size: 16px; }
+.lvl.current { background: linear-gradient(180deg, #4fdc7f, #26b35a); box-shadow: 0 4px 0 rgba(0,0,0,.35), 0 0 0 3px #fff; }
+.lvl.locked { background: #2a3254; color: #6f7aa8; box-shadow: none; cursor: default; }

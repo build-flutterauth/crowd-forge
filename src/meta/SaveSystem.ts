@@ -34,7 +34,7 @@ export interface SaveData {
   endlessBest: { distance: number; maxArmy: number; enemies: number; highestMult: number; score: number };
   director?: DirectorState;
   variety?: { envs?: string[]; bosses?: string[] };
-  settings: { sound: boolean; haptics: boolean; quality: 'high' | 'low'; showHints: boolean };
+  settings: { sound: boolean; haptics: boolean; quality: 'high' | 'low'; showHints: boolean; gameSpeed: number };
 }
 
 const KEY = 'crowdforge_save_v1';
@@ -63,7 +63,7 @@ export function defaultSave(): SaveData {
     },
     streak: 0,
     endlessBest: { distance: 0, maxArmy: 0, enemies: 0, highestMult: 0, score: 0 },
-    settings: { sound: true, haptics: true, quality: 'high', showHints: true },
+    settings: { sound: true, haptics: true, quality: 'high', showHints: true, gameSpeed: 1 },
   };
 }
 
