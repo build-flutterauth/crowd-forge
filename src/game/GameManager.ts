@@ -33,6 +33,10 @@ import { ARENA } from '../config/arenaConfig';
 import type { ArenaLevelData } from '../arena/ArenaSim';
 import { ArenaGenerator } from '../arena/ArenaGenerator';
 import { ArenaMode, type ArenaStats } from '../arena/ArenaMode';
+import { CANYON } from '../config/canyonConfig';
+import type { CanyonLevelData } from '../arena/CanyonSim';
+import { CanyonGenerator } from '../arena/CanyonGenerator';
+import { CanyonMode } from '../arena/CanyonMode';
 
 export type Phase = 'menu' | 'run' | 'dying' | 'runway' | 'over';
 
@@ -50,7 +54,7 @@ export interface HudState {
 
 export interface RunResult {
   mode: 'level' | 'endless' | 'lanes' | 'arena';
-  lanes?: { time: number; castlePct: number; towers: number; reason: string; bestNote: string; seed: number };
+  lanes?: { time: number; castlePct: number; towers: number; reason: string; bestNote: string; seed: number; canyon?: boolean };
   won: boolean;
   level: number;
   code: string;
@@ -125,6 +129,8 @@ export class GameManager {
   lanes: LanesMode | null = null;
   readonly arenaGen = new ArenaGenerator();
   arena: ArenaMode | null = null;
+  readonly canyonGen = new CanyonGenerator();
+  canyon: CanyonMode | null = null;
   readonly director = new DifficultyDirector();
   readonly variety = new VarietyHistory();
   readonly prog: ProgressionSystem;
@@ -263,6 +269,13 @@ export class GameManager {
       this.arena.dispose();
       this.arena = null;
       this.env.setHalfWidth(GAME.track.halfWidth);
+      this.army.setVisible(true);
+    }
+    if (this.canyon) {
+      this.canyon.dispose();
+      this.canyon = null;
+      this.env.setHalfWidth(GAME.track.halfWidth);
+      this.env.setTrackVisible(true);
       this.army.setVisible(true);
     }
     if (this.lanes) {
@@ -461,6 +474,7 @@ export class GameManager {
     realDt = Math.min(realDt, 0.05);
     if (this.lanes) return this.updateLanes(realDt);
     if (this.arena) return this.updateArena(realDt);
+    if (this.canyon) return this.updateCanyon(realDt);
     const target = this.bosses.introActive ? 0.22 : this.slowT > 0 ? GAME.feel.slowmoScale : 1;
     if (this.slowT > 0) this.slowT -= realDt;
     this.timeScale += (target - this.timeScale) * Math.min(1, realDt * 10);
@@ -813,8 +827,14 @@ export class GameManager {
     return this.arenaGen.generate({ seed: s, level, D, fireRate, env: this.chooseEnv(s) });
   }
 
-  startArena(opts: { level?: number; seed?: number } = {}): void {
+  /** Every 5th Arena level is a Canyon Siege (the debug panel can force either). */
+  isCanyonLevel(level: number): boolean {
+    return CANYON.isCanyonLevel(level);
+  }
+
+  startArena(opts: { level?: number; seed?: number; canyon?: boolean } = {}): void {
     const level = opts.level ?? this.prog.data.arenaLevel;
+    if (opts.canyon ?? this.isCanyonLevel(level)) return this.startCanyon(level, opts.seed);
     const lv = this.generateArena(level, opts.seed);
     this.clearWorld();
     this.level = null;
@@ -829,7 +849,7 @@ export class GameManager {
     const color = COLORS.find((c) => c.id === d.equipped.color)?.hex ?? '#2f8cff';
     this.arena = new ArenaMode(this.stage, this.particles, this.overlay, lv, { skin: d.equipped.skin, color, weapon: d.equipped.weapon });
     this.arena.onBanner = (t, c, dur) => this.ui?.banner(t, c, dur);
-    this.arena.onEnd = (st) => this.endArena(st);
+    this.arena.onEnd = (st) => this.endArena(st, { ...lv, bestName: lv.report.best.name.replace('Smart, target ', '') });
     this.phase = 'run';
     this.paused = false;
     this.time = 0;
@@ -863,8 +883,68 @@ export class GameManager {
     this.stage.render();
   }
 
-  private endArena(st: ArenaStats): void {
-    const lv = this.arena!.lv;
+  // ------------------------------------------------------------------
+  // Canyon Siege (special Arena level)
+  // ------------------------------------------------------------------
+
+  generateCanyon(level: number, seed?: number): CanyonLevelData {
+    const s = seed ?? this.debug.seed ?? this.arenaSeed(level);
+    const D = this.debug.difficulty ?? this.director.levelDifficulty(level);
+    const fireRate = ARENA.fireRate + ARENA.fireRatePerUpgrade * this.prog.data.upgrades.startUnits;
+    return this.canyonGen.generate({ seed: s, level, D, fireRate, env: this.chooseEnv(s) });
+  }
+
+  private startCanyon(level: number, seed?: number): void {
+    const lv = this.generateCanyon(level, seed);
+    this.clearWorld();
+    this.level = null;
+    this.endless = null;
+    this.env.apply(lv.env, lv.seed);
+    this.env.setTrackVisible(false);
+    this.applyCosmetics();
+    this.army.reset(1);
+    this.army.setVisible(false);
+    this.input.reset();
+    const d = this.prog.data;
+    const color = COLORS.find((c) => c.id === d.equipped.color)?.hex ?? '#2f8cff';
+    this.canyon = new CanyonMode(this.stage, this.particles, this.overlay, lv, { skin: d.equipped.skin, color, weapon: d.equipped.weapon });
+    this.canyon.onBanner = (t, c, dur) => this.ui?.banner(t, c, dur);
+    this.canyon.onEnd = (st) => this.endArena(st, { ...lv, canyon: true, bestName: lv.report.best.name });
+    this.phase = 'run';
+    this.paused = false;
+    this.time = 0;
+    this.ui?.banner(`LEVEL ${level} · CANYON SIEGE`, 'level', 1.8);
+  }
+
+  private updateCanyon(realDt: number): void {
+    const cy = this.canyon!;
+    if (cy.slowmo > 0) cy.slowmo -= realDt;
+    const target = cy.slowmo > 0 ? 0.35 : 1;
+    this.timeScale += (target - this.timeScale) * Math.min(1, realDt * 10);
+    const dt = this.paused ? 0 : realDt * this.timeScale * this.gameSpeed;
+    this.input.update(this.paused ? 0 : realDt);
+    const n = Math.ceil(this.gameSpeed);
+    for (let k = 0; k < n; k++) {
+      this.time += dt / n;
+      cy.update(dt / n, this.paused ? 0 : realDt / n, this.input.target, this.time);
+    }
+    this.env.update(dt, 20, this.stage.camera.position);
+    this.particles.update(dt);
+    this.overlay.update(realDt);
+    if (this.ui) {
+      const lv = cy.lv;
+      const left = Math.max(0, lv.maxTime - cy.t);
+      const horde = cy.hordeLeft();
+      this.ui.hud({
+        mode: 'arena', level: lv.level, progress: 1 - horde / lv.horde, distance: 0, army: 0, boost: false, tier: 0,
+        sub: `⚔ ${fmt(Math.ceil(horde))} · ❤ ${fmt(Math.max(0, Math.ceil(cy.base)))} · ⏱ ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`,
+        debugLine: this.debug.showGen ? `canyon ×${lv.gateMult} · ${lv.report.notes[0]}` : '',
+      });
+    }
+    this.stage.render();
+  }
+
+  private endArena(st: ArenaStats, lv: { level: number; seed: number; code: string; D: number; targetTime: number; bestName: string; canyon?: boolean }): void {
     const d = this.prog.data;
     this.phase = 'over';
     const coinMult = this.prog.coinMult();
@@ -888,7 +968,7 @@ export class GameManager {
       mode: 'arena', won: st.won, level: lv.level, code: lv.code, difficulty: lv.D, finishArmy: 0, maxArmy: Math.round(st.peak),
       mult: 1, coinsBase, coinsBonus, coinsTotal: coinsBase + coinsBonus, distance: 0, enemies: Math.round(st.kills), highestMult: 0,
       score: 0, newBest: false, progress: st.castlePct, rewards, lossPct: 0,
-      lanes: { time: st.time, castlePct: st.castlePct, towers: st.hedges, reason: st.reason, bestNote: lv.report.best.name.replace('Smart, target ', ''), seed: lv.seed },
+      lanes: { time: st.time, castlePct: st.castlePct, towers: st.hedges, reason: st.reason, bestNote: lv.bestName, seed: lv.seed, canyon: lv.canyon },
     });
   }
 

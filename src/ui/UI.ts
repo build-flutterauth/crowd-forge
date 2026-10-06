@@ -124,10 +124,10 @@ export class UI implements GameUI {
     this.game.startLevel({ levelNumber, seed });
   }
 
-  startArena(level?: number, seed?: number): void {
+  startArena(level?: number, seed?: number, canyon?: boolean): void {
     this.clearScreen();
     this.showHud();
-    this.game.startArena({ level, seed });
+    this.game.startArena({ level, seed, canyon });
   }
 
   startLanes(level?: number, seed?: number): void {
@@ -259,7 +259,7 @@ export class UI implements GameUI {
     this.game.paused = true;
     const lv = this.game.level;
     const lanes = this.game.lanes?.lv;
-    const arena = this.game.arena?.lv;
+    const arena = this.game.arena?.lv ?? this.game.canyon?.lv;
     this.showModal(
       `<h2>PAUSED</h2><div class="sub">${arena ? `Level ${arena.level} · seed ${arena.code} · D${arena.D.toFixed(2)}` : lanes ? `Lane Battle ${lanes.level} · seed ${lanes.code} · D${lanes.D.toFixed(2)}` : lv ? `Level ${lv.levelNumber} · seed ${lv.code} · D${lv.difficulty.toFixed(2)} · ${this.game.envName()}` : 'Endless'}</div>
        <div class="btns">
@@ -272,7 +272,7 @@ export class UI implements GameUI {
         this.modal = null;
         this.game.paused = false;
         if (a === 'restart') {
-          if (arena) this.game.startArena({ level: arena.level, seed: arena.seed });
+          if (arena) this.game.startArena({ level: arena.level, seed: arena.seed, canyon: !!this.game.canyon });
           else if (lanes) this.game.startLanes({ level: lanes.level, seed: lanes.seed });
           else if (this.game.endless) this.game.startEndless(this.game.endless.seed);
           else if (lv) this.game.startLevel({ level: lv });
@@ -302,11 +302,13 @@ export class UI implements GameUI {
         <div class="sub">Level ${r.level} · seed ${r.code} · D${r.difficulty.toFixed(2)}<br>${ln.reason}</div>
         <div class="stats">
           <div class="stat"><span>Time</span><b>${Math.floor(ln.time / 60)}:${String(Math.floor(ln.time % 60)).padStart(2, '0')}</b></div>
-          <div class="stat"><span>Fortress destroyed</span><b>${Math.round(ln.castlePct * 100)}%</b></div>
+          <div class="stat"><span>${ln.canyon ? 'Horde destroyed' : 'Fortress destroyed'}</span><b>${Math.round(ln.castlePct * 100)}%</b></div>
           <div class="stat"><span>Enemies defeated</span><b>${fmt(r.enemies)}</b></div>
           <div class="stat"><span>Peak army</span><b>${fmt(r.maxArmy)}</b></div>
         </div>
-        <div class="muted" style="text-align:center">💡 Best plan found by the generator: aim at <b>${ln.bestNote}</b>${ln.towers ? ` · you cleared ${ln.towers} hedge${ln.towers > 1 ? 's' : ''}` : ''}</div>`;
+        <div class="muted" style="text-align:center">${ln.canyon
+          ? `💡 Best plan found by the generator: <b>${ln.bestNote}</b>${ln.towers ? ` · you built ${ln.towers} turret level${ln.towers > 1 ? 's' : ''}` : ''}`
+          : `💡 Best plan found by the generator: aim at <b>${ln.bestNote}</b>${ln.towers ? ` · you cleared ${ln.towers} hedge${ln.towers > 1 ? 's' : ''}` : ''}`}</div>`;
       buttons = r.won
         ? `<button class="btn primary" data-a="arenaNext">NEXT LEVEL ▶<small>a brand-new generated level</small></button><button class="btn" data-a="menu">🏠 MENU</button>`
         : `<button class="btn primary" data-a="arenaRetry">↻ TRY AGAIN</button><button class="btn" data-a="menu">🏠 MENU</button>`;
@@ -487,8 +489,9 @@ export class UI implements GameUI {
     for (let n = 1; n <= shown; n++) {
       const open = n <= unlocked;
       const boss = mode === 'runner' && n % 5 === 0;
+      const canyon = mode === 'arena' && this.game.isCanyonLevel(n);
       tiles += `<button class="lvl ${open ? '' : 'locked'} ${n === unlocked ? 'current' : ''}" data-lvl="${n}" ${open ? '' : 'disabled'}>
-        ${open ? n : '🔒'}${n === unlocked ? '<small>NEXT</small>' : n < unlocked ? '<small>✓</small>' : ''}${boss && open ? '<i>👑</i>' : ''}</button>`;
+        ${open ? n : '🔒'}${n === unlocked ? '<small>NEXT</small>' : n < unlocked ? '<small>✓</small>' : ''}${boss && open ? '<i>👑</i>' : ''}${canyon ? '<i>🏜️</i>' : ''}</button>`;
     }
     const tab = (m: string, label: string) => `<button class="tab ${m === mode ? 'on' : ''}" data-mode="${m}">${label}</button>`;
     this.panel(

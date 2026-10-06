@@ -54,6 +54,7 @@ export class EnvironmentRenderer {
   /** decoration density (lowered on the low quality setting) */
   density = 1;
   private hw = HW;
+  private trackHidden = false;
   private white = mat('#ffffff');
   private dark = mat('#15122b');
 
@@ -118,6 +119,12 @@ export class EnvironmentRenderer {
     }
   }
 
+  /** Hide the runner track, its decoration and the ground (Canyon Siege builds its own world). */
+  setTrackVisible(v: boolean): void {
+    for (const t of this.tiles) t.group.visible = v;
+    this.trackHidden = !v;
+    this.ground.visible = v && !this.def.noGround;
+  }
   apply(env: EnvId, seed: number): void {
     this.env = env;
     this.def = ENVIRONMENTS[env];
@@ -132,7 +139,7 @@ export class EnvironmentRenderer {
     this.stage.sun.color.set(d.sun[0]);
     this.stage.sun.intensity = d.sun[1];
     (this.ground.material as THREE.MeshLambertMaterial).color.set(d.ground);
-    this.ground.visible = !d.noGround;
+    this.ground.visible = !d.noGround && !this.trackHidden;
     this.tileMats[0].color.set(d.track[0]);
     this.tileMats[1].color.set(d.track[1]);
     this.railMat.color.set(d.rail);

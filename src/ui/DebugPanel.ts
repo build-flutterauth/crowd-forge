@@ -78,6 +78,7 @@ export class DebugPanel {
           <button data-a="regen">🎲 New random seed</button>
           <button data-a="endless">∞ Endless (seed)</button>
           <button data-a="arena">▶ Arena (seed/level)</button>
+          <button data-a="canyon">🏜 Canyon Siege (seed/level)</button>
           <button data-a="lanes">⚔ Lane Battle (seed/level)</button>
           <button data-a="skip">⏭ Skip segment</button>
           <button data-a="inv" class="${dbg.invincible ? 'on' : ''}">🛡 Invincible</button>
@@ -98,6 +99,7 @@ units lost ${fmt(ds.totalLost)} · enemies defeated ${fmt(ds.totalDefeated)}</pr
       </fieldset>`;
 
     if (g.arena) html += this.arenaReport();
+    else if (g.canyon) html += this.canyonReport();
     else if (g.lanes) html += this.lanesReport();
     else if (lv) html += this.levelReport(lv);
     else if (g.endless) html += this.endlessReport();
@@ -153,6 +155,23 @@ Simulated strategies:
 ${strat}
 
 Horde waves: ${waves}</pre></fieldset>`;
+  }
+
+  private canyonReport(): string {
+    const lv = this.game.canyon!.lv;
+    const r = lv.report;
+    const turrets = lv.turrets.map((t, i) => `${i ? 'right' : 'left '} pad: ${t.kind.padEnd(5)} costs ${t.costs.map(fmt).join(' / ')} · dps ${t.dps.map((x) => fmt(x)).join(' / ')}`).join('\n');
+    const strat = r.strategies.map((s) => `<span class="${s.won ? 'ok' : 'no'}">${s.won ? 'WIN ' : 'LOSE'}</span> ${s.time.toFixed(0).padStart(4)}s  base ${fmt(Math.max(0, Math.round(s.baseLeft)))}  ${esc(s.name)}`).join('\n');
+    return `<fieldset><legend>Canyon Siege ${lv.code} (attempt ${lv.attempt + 1})</legend>
+      <pre>L${lv.level} · D${lv.D.toFixed(2)} · fire ${lv.fireRate.toFixed(2)}/s · ${lv.genMs.toFixed(0)}ms
+validation: <span class="${r.valid ? 'ok' : 'no'}">${r.valid ? 'VALID' : 'BEST EFFORT — ' + esc(r.reasons.join('; '))}</span>
+${r.notes.map(esc).join('\n')}
+casual win rate ${pct(r.casualWinRate)} · release ratio ${r.ratio.toFixed(2)} · time limit ${lv.maxTime.toFixed(0)}s
+
+${turrets}
+
+Simulated build orders:
+${strat}</pre></fieldset>`;
   }
 
   private lanesReport(): string {
@@ -257,6 +276,12 @@ Waves: ${waves}</pre></fieldset>`;
       case 'arena': {
         const seed = this.parseSeed();
         this.ui.startArena(this.levelNumber(), seed ?? undefined);
+        this.render();
+        break;
+      }
+      case 'canyon': {
+        const seed = this.parseSeed();
+        this.ui.startArena(this.levelNumber(), seed ?? undefined, true);
         this.render();
         break;
       }

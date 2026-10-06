@@ -70,6 +70,28 @@ Levels are procedural (`src/arena/`):
 4. Size the horde to the throughput of that plan, and tune it until casual players win at a difficulty-appropriate rate.
 5. Reject any layout where aim doesn't matter.
 
+### Canyon Siege — every 5th Arena level
+
+Levels 5, 10, 15 and so on are **Canyon Siege** levels (marked 🏜️ in level select):
+
+- The cannon sits on a plaza at the foot of a winding cliff-top canyon. A huge horde pours down the canyon in a red river.
+- At the canyon mouth, a barricade holds a big ×N gate (×50…×250) with a turret pad on each side.
+- **Aim at the gate** to send a multiplied army up the canyon. Soldiers that reach the top cut into the horde's reserve directly.
+- **Aim at a turret pad** to spend soldiers building it. The number on the pad is how many it still needs. Keep feeding it to upgrade it (Lv2, Lv3).
+  - The small **Gatling** is cheap.
+  - The **Mega Gatling** costs more but shreds far more of the horde.
+  - Built turrets fire on their own at whatever is nearest the barricade.
+- Wipe out the entire horde before it reaches the cannon or time runs out. Enemies that break through are not divided by the gate.
+
+Levels are procedural (`src/arena/Canyon*.ts`):
+1. Roll the gate, turret costs and power, and canyon shape.
+2. Simulate build orders, from gate-only up to fully upgraded turrets.
+3. Size the horde so the best order wins near the target time.
+4. Tune the horde's release rate until casual players win at a difficulty-appropriate rate.
+5. Reject layouts where turrets don't matter, i.e. gate-only wins as fast.
+
+The developer panel's **🏜 Canyon Siege** button plays any seed or level and lists every simulated build order. Tuning lives in `src/config/canyonConfig.ts`, and `npx vite-node tools/validateCanyon.ts` sweeps levels.
+
 In testing, real play reproduces the simulated best time within about ±2 s. The developer panel's **▶ Arena** button shows every simulated plan. Tuning lives in `src/config/arenaConfig.ts`, and `npx vite-node tools/validateArena.ts` sweeps levels. The original runner, Endless and Lane Battle remain as secondary modes on the menu.
 
 ## Lane Battle mode

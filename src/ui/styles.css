@@ -207,3 +207,6 @@ body.in-menu .dbg-toggle { display: none; }
 .lvl i { position: absolute; top: -6px; right: -4px; font-style: normal; font-size: 16px; }
 .lvl.current { background: linear-gradient(180deg, #4fdc7f, #26b35a); box-shadow: 0 4px 0 rgba(0,0,0,.35), 0 0 0 3px #fff; }
 .lvl.locked { background: #2a3254; color: #6f7aa8; box-shadow: none; cursor: default; }
+.pad-cost { color: #fff; font-size: 30px; font-weight: 900; text-align: center; line-height: 1; -webkit-text-stroke: 1.5px #3a2a00; text-shadow: 0 3px 0 rgba(0,0,0,.45); }
+.pad-cost.big { font-size: 36px; }
+.pad-cost small { display: block; font-size: 12px; -webkit-text-stroke: 0; letter-spacing: 1px; }
